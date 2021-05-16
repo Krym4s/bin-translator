@@ -1,0 +1,390 @@
+#include <math.h>
+#define DO_P_PUSH(x) pushIntoStack (processor->stackBuff, x)
+
+#define DO_P_POP() popFromStack (processor->stackBuff)
+#define NO_PARAMS 0
+
+#define WRITE_JMP_POINTER    {                                             \
+                             int* iValue =(int*) (IsE_Bytecode + i);       \
+                             i += sizeof(int);                             \
+                             char strValue[20] = {};                       \
+                             currSymb += sprintf (currSymb, "%d", *iValue);\
+                             }
+
+#define READ_JMP_POINTER    {                                                                                   \
+                                int address = -1;                                                               \
+                                if (sscanf((assemblerCode + i)->chLine + commandLen, " %d", &address))          \
+                                {                                                                               \
+                                    char* chVers = (char*) &address;                                            \
+                                    for (int f = 0; f < sizeof (address); ++f)                                  \
+                                            *(*IsE_ByteCode + codeByte++) = *(chVers + f);                      \
+                                }                                                                               \
+                                else                                                                            \
+                                {                                                                               \
+                                    char nameOfLabel[40];                                                       \
+                                    sscanf((assemblerCode + i)->chLine + commandLen, " : %s", nameOfLabel);     \
+                                          char* EOL = strchr(nameOfLabel,' ');                                  \
+                                                                                                                \
+                                    struct Label* currLabel = labelArr->right;                                  \
+                                                                                                                \
+                                    findAddress (*labelArr, nameOfLabel, &address);                             \
+                                    char* chVers = (char*) &address;                                            \
+                                                                                                                \
+                                    for (int f = 0; f < sizeof (address); ++f)                                  \
+                                         *(*IsE_ByteCode + codeByte++) = *(chVers + f);                         \
+                                }                                                                               \
+                            }
+
+#define JMP_CONDITION(sign) {                                                                \
+                                double temp = DO_P_POP();                                    \
+                                if (temp sign DO_P_POP())                                    \
+                                {                                                            \
+                                    int* chVers = (int*) (processor->code + processor->rip); \
+                                    processor->rip = *chVers;                                \
+                                }                                                            \
+                                else                                                         \
+                                {                                                            \
+                                    processor->rip+=sizeof(int);                             \
+                                }                                                            \
+                            }
+
+#define arithmetics(sign) {                                           \
+                                double temp = DO_P_POP();             \
+                                DO_P_PUSH (temp sign DO_P_POP());     \
+                          }                                           \
+
+#define PP_registArg_IN int regN = findReg (regist); *(*IsE_ByteCode + codeByte++) = regN;
+
+#define PP_valueArg_IN char* charDTranslit =(char*) &dValue;                                        \
+                                                                                                    \
+                               for (int j = 0; j < sizeof (double); ++j)                            \
+                                   *(*IsE_ByteCode + codeByte++) = *(charDTranslit + j);
+
+DEF_CPU (ADD, 1, NO_PARAMS, arithmetics (+),{},{})
+
+DEF_CPU (SUB, 17, NO_PARAMS, arithmetics (-),{},{})
+
+DEF_CPU (MUL, 2, NO_PARAMS, arithmetics (*),{},{})
+
+DEF_CPU (DIV, 18, NO_PARAMS, arithmetics (/),{},{})
+
+DEF_CPU (IN, 3, NO_PARAMS,
+{
+    double value;
+    scanf ("%lg", &value);
+    DO_P_PUSH (value);
+},{},{})
+
+DEF_CPU (OUT, 19, NO_PARAMS, {printf ("%lg\n", DO_P_POP());},{},{})
+
+DEF_CPU (SIN, 115, NO_PARAMS, {DO_P_PUSH ((DO_P_POP()) );},{},{})
+
+DEF_CPU (COS, 99, NO_PARAMS, {DO_P_PUSH ((DO_P_POP()) );},{},{})
+
+DEF_CPU (POW, 112, NO_PARAMS,
+{
+    double temp = DO_P_POP();
+    DO_P_PUSH((DO_P_POP(), temp));
+},{},{})
+
+DEF_CPU (SQRT, 113, NO_PARAMS, {DO_P_PUSH ((DO_P_POP()) );},{},{})
+
+DEF_CPU (DUMP, 100, NO_PARAMS, {processorDump (processor, ARGNAME(processor->errorCode), __LINE__ );},{},{})
+
+#define DEF_REG(name,value) case value: DO_P_PUSH (processor->name); \
+                                        break;
+
+DEF_CPU (PUSH, 4, 1,
+{
+    int mode = processor->code[processor->rip++];
+    double arg = 0;
+
+    if (mode & 1)
+    {
+        double* chVers = (double*) (processor->code + processor->rip);
+        arg = *chVers;
+        processor->rip += 8;
+    }
+
+    if (mode & 2)
+    {
+        arg += processor->reg[processor->code[processor->rip++]];
+        /*printf ("regn = %d\n", processor->code[processor->rip - 1]);
+        printf ("push reg = %d\n", arg);*/
+    }
+
+    if (mode & 4)
+    {
+        arg = processor->RAM[(int)arg];
+        //printf ("end %lg\n", arg);
+    }
+    DO_P_PUSH(arg);
+},
+
+{
+    double dValue = 0;
+    char regist[MAX_COMMAND_LENGTH];
+
+    if (sscanf ((assemblerCode + i)->chLine + commandLen, " [ %s + %lg ]", regist, &dValue) == 2)
+    {
+        *(*IsE_ByteCode + codeByte++) = 7;
+        PP_valueArg_IN
+        PP_registArg_IN
+    } else
+
+    if (sscanf ((assemblerCode + i)->chLine + commandLen, " %s + %lg", regist, &dValue) == 2)
+    {
+        *(*IsE_ByteCode + codeByte++) = 3;
+        PP_valueArg_IN
+        PP_registArg_IN
+    } else
+
+    if (sscanf ((assemblerCode + i)->chLine + commandLen, " [ %lg ]", &dValue) == 1)
+    {
+        *(*IsE_ByteCode + codeByte++) = 5;
+        PP_valueArg_IN
+    } else
+
+    if (sscanf ((assemblerCode + i)->chLine + commandLen, " [ %s ]", regist) == 1)
+    {
+        *(*IsE_ByteCode + codeByte++) = 6;
+        PP_registArg_IN
+    } else
+
+    if (sscanf ((assemblerCode + i)->chLine + commandLen, " %lg", &dValue) == 1)
+    {
+        *(*IsE_ByteCode + codeByte++) = 1;
+        PP_valueArg_IN
+    } else
+
+    if (sscanf ((assemblerCode + i)->chLine + commandLen, " %s", regist) == 1)
+    {
+        *(*IsE_ByteCode + codeByte++) = 2;
+        PP_registArg_IN
+    }
+},
+
+{
+    int mode = IsE_Bytecode[i++];
+        double arg = 0;
+        char reg = -1;
+        char* regch = (char*) calloc (10, sizeof (char));
+        if (mode & 1)
+        {
+            double* chVers = (double*) (IsE_Bytecode + i);
+            arg = *chVers;
+            i += 8;
+        }
+
+        if (mode & 2)
+        {
+            reg = IsE_Bytecode[i++];
+            findReg (&regch, reg);
+        }
+
+        if (mode & 4)
+            currSymb += sprintf (currSymb, "[ ");
+
+
+        if (mode & 2)
+        {
+            currSymb += sprintf (currSymb, regch);
+            currSymb += sprintf (currSymb, " ");
+        }
+
+        if (mode &2 && mode & 1)
+            currSymb += sprintf (currSymb, "+ ");
+
+        if (mode & 1)
+        {
+            currSymb += sprintf (currSymb, "%lg ", arg);
+        }
+
+        if (mode & 4)
+            currSymb += sprintf (currSymb, "] ");
+})
+
+#undef DEF_REG
+#define DEF_REG(name,value) case value: processor->name = DO_P_POP(); \
+                                break;
+
+DEF_CPU (POP, 20, 1,
+{
+    int mode = processor->code[processor->rip++];
+    double arg = 0;
+
+    if (mode == 0)
+        DO_P_POP();
+
+    /*else if (mode == 2)
+    {
+        processor->reg = DO_P_POP();
+*/
+    if (mode & 1)
+    {
+        double* chVers = (double*) (processor->code + processor->rip);
+        arg = *chVers;
+        processor->rip += 8;
+    }
+
+    if (mode & 2)
+    {
+         if (!(mode & 4))
+                {
+                    arg += processor->code[processor->rip++];
+                    processor->reg[(int)arg] = DO_P_POP();
+                }
+                else
+                {
+                    arg += processor->reg[processor->code[processor->rip++]];
+                    processor->RAM[(int)arg] = DO_P_POP();
+                }
+    }
+
+    else
+
+        if (mode & 4)
+        {
+            processor->RAM[(int)arg] = DO_P_POP();
+        }
+},
+
+{
+    double dValue = 0;
+        char regist[MAX_COMMAND_LENGTH];
+
+        if (sscanf ((assemblerCode + i)->chLine + commandLen, " [ %s + %lg ]", regist, &dValue) == 2)
+        {
+            *(*IsE_ByteCode + codeByte++) = 7;
+            PP_valueArg_IN
+            PP_registArg_IN
+        } else
+
+        if (sscanf ((assemblerCode + i)->chLine + commandLen, " %s + %lg", regist, &dValue) == 2)
+        {
+            *(*IsE_ByteCode + codeByte++) = 3;
+            PP_valueArg_IN
+            PP_registArg_IN
+        } else
+
+        if (sscanf ((assemblerCode + i)->chLine + commandLen, " [ %lg ]", &dValue) == 1)
+        {
+            *(*IsE_ByteCode + codeByte++) = 5;
+            PP_valueArg_IN
+        } else
+
+        if (sscanf ((assemblerCode + i)->chLine + commandLen, " [ %s ]", regist) == 1)
+        {
+            *(*IsE_ByteCode + codeByte++) = 6;
+            PP_registArg_IN
+        } else
+
+        if (sscanf ((assemblerCode + i)->chLine + commandLen, " %s", regist) == 1)
+        {
+            *(*IsE_ByteCode + codeByte++) = 2;
+            PP_registArg_IN
+        } else
+
+        if (sscanf ((assemblerCode + i)->chLine + commandLen, "%s"), regist)
+        {
+            *(*IsE_ByteCode + codeByte++) = 0;
+        }
+},
+
+{
+    int mode = IsE_Bytecode[i++];
+    double arg = 0;
+    char reg = -1;
+    char* regch = (char*) calloc (10, sizeof (char));
+    if (mode & 1)
+    {
+        double* chVers = (double*) (IsE_Bytecode + i);
+        arg = *chVers;
+        i += 8;
+    }
+
+    if (mode & 2)
+    {
+        reg = IsE_Bytecode[i++];
+        findReg (&regch, reg);
+    }
+
+    if (mode & 4)
+        currSymb += sprintf (currSymb, "[ ");
+
+
+    if (mode & 2)
+    {
+        currSymb += sprintf (currSymb, regch);
+        currSymb += sprintf (currSymb, " ");
+    }
+
+    if (mode &2 && mode & 1)
+        currSymb += sprintf (currSymb, "+ ");
+
+    if (mode & 1)
+    {
+        currSymb += sprintf (currSymb, "%lg ", arg);
+    }
+
+    if (mode & 4)
+        currSymb += sprintf (currSymb, "] ");
+})
+#undef DEF_REG
+
+DEF_CPU (NEG, 126, NO_PARAMS, {DO_P_PUSH (- DO_P_POP());},{},{})
+
+DEF_CPU (COMPL_ERROR, 127, NO_PARAMS, {printf ("COMPILATION ERROR");},{},{})
+
+DEF_CPU (HLT, 0, NO_PARAMS, {return 0;},{},{})
+
+DEF_CPU (JMP, 21, 1,
+{
+    int* chVers = (int*) (processor->code + processor->rip);
+    processor->rip = *chVers;
+}, READ_JMP_POINTER, WRITE_JMP_POINTER)
+
+DEF_CPU (JA, 22, 1, JMP_CONDITION(>), READ_JMP_POINTER, WRITE_JMP_POINTER)
+
+DEF_CPU (JAE, 23, 1, JMP_CONDITION(>=), READ_JMP_POINTER, WRITE_JMP_POINTER)
+
+DEF_CPU (JB, 24, 1, JMP_CONDITION(<), READ_JMP_POINTER, WRITE_JMP_POINTER)
+
+DEF_CPU (JBE, 25, 1, JMP_CONDITION(<=), READ_JMP_POINTER, WRITE_JMP_POINTER)
+
+DEF_CPU (JE, 26, 1,
+{
+    double temp = DO_P_POP();
+    if ( fabs (DO_P_POP() - temp) < EPSILON)
+    {
+        int* chVers = (int*) (processor->code + processor->rip);
+        processor->rip = *chVers;
+    }
+    else
+    {
+        processor->rip+=sizeof(int);
+    }
+}, READ_JMP_POINTER, WRITE_JMP_POINTER)
+
+DEF_CPU (JNE, 27, 1,
+{
+    JMP_CONDITION(!=)
+}, READ_JMP_POINTER, WRITE_JMP_POINTER)
+
+DEF_CPU (CALL, 28, 1,
+{
+    int* chVers = (int*) (processor->code + processor->rip);
+    pushIntoStack (processor->stackBuff, processor->rip + sizeof (*chVers));
+    processor->rip = *chVers;
+}, READ_JMP_POINTER, WRITE_JMP_POINTER)
+
+DEF_CPU (RET, 29, 0, processor->rip = popFromStack (processor->stackBuff);,;,;)
+
+#undef JMP_CONDITION
+#undef READ_JMP_POINTER
+#undef WRITE_JMP_POINTER
+#undef NO_PARAMS
+#undef DO_P_PUSH
+#undef DO_P_POP
+#undef PP_registArg_IN
+#undef PP_valueArg_IN

@@ -2,6 +2,6 @@
 
 int main ()
 {
-    CreateElf ("empty", "a.out");
+    CreateElf ("../asm/cpu.ISBC", "a.out");
     return 0;
 }

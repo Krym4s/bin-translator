@@ -12,6 +12,8 @@ section .text
 %define     system      80h
 %define     exitcode    3ch
 
+jmp                 main
+
 _callHLT: 
     jmp _HLT
 
@@ -260,9 +262,131 @@ _handle_numeric_string:
     ret
 
 main: 
-    call _callIN
-    call _callOUT
-    call _callHLT
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+call _callIN
+call _callIN
+movsd xmm0, [rsp]
+add   rsp, 8
+movsd xmm1, [rsp]
+add   rsp, 8
+cmpsd xmm0, xmm1, 0
+ptest xmm0, xmm0
+;movsd  rax, xmm0
+;cmp rax, 0
+je _callHLT
+in:
+call _callIN
+call _callOUT
+call _callHLT
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+
+
 
 
 
