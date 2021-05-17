@@ -91,12 +91,14 @@ IsE_Commands          IsEOpHandler (char* input, char* output, int* IsErip, int*
 void                  JmpRelatedOpHandler (char* input, char* output, int* IsErip, int* Elfrip, int address);
 IsE_Commands          IsEPushHandler (char* input, char* output, int* IsErip, int* Elfrip);
 IsE_Commands          IsEPopHandler  (char* input, char* output, int* IsErip, int* Elfrip);
+IsE_Commands          IsECondJmpHandler (char* input, char* output, int* IsErip, int* Elfrip, char mode, IsE_Commands command);
 
 const struct byteInterpret INb      = {{0xe8}, 1, 4};
 const struct byteInterpret OUTb     = {{0xe8}, 1, 4};
 const struct byteInterpret CALLb    = {{0xe8}, 1, 4};
 const struct byteInterpret HLTb     = {{0xe8}, 1, 4};
 const struct byteInterpret JMPb     = {{0xe9}, 1, 4};
+const struct byteInterpret RETb     = {{0xc3}, 1, 0};
 
 const struct byteInterpret ADDb     = {{0xf2, 0x0f, 0x10, 0x04, 0x24, 0x48, 0x83, 0xc4, 0x08, 0xf2, 0x0f, 0x58, 0x04, 0x24, 0xf2, 0x0f, 0x11, 0x04, 0x24}, 19, 0};
 const struct byteInterpret SUBb     = {{0xf2, 0x0f, 0x10, 0x04, 0x24, 0x48, 0x83, 0xc4, 0x08, 0xf2, 0x0f, 0x5c, 0x04, 0x24, 0xf2, 0x0f, 0x11, 0x04, 0x24}, 19, 0};
@@ -112,6 +114,8 @@ const struct byteInterpret POPrb    = {{0xf2, 0x0f, 0x10 , 0x14/**/, 0x24, 0x48,
 
 const struct byteInterpret CONDjmp  = {{0xf2, 0x0f, 0x10, 0x04, 0x24, 0x48, 0x83, 0xc4, 0x08, 0xf2, 0x0f ,0x10, 0x0c, 0x24, 0x48, 0x83, 0xc4, 0x08, 0xf2, 
                                         0x0f, 0xc2 ,0xc1, 0x00/*changeble*/ , 0x66, 0x0f, 0x38, 0x17, 0xc0, 0x0f, 0x84}, 30, 1};
+
+
 
 void SetUClabel (char* output, command* commands, lable* lables, unsigned int commandN, unsigned int lableN);
 void SetClabel (char* output, command* commands, lable* lables, unsigned int commandN, unsigned int lableN);

@@ -228,16 +228,34 @@ IsE_Commands IsEOpHandler (char* input, char* output, int* IsErip, int* Elfrip, 
             (*IsErip)++;
             return IsEPopHandler  (input, output, IsErip, Elfrip);
 
-        case 26:
-            (*IsErip)+= 5;
-            for (int i = 0; i < CONDjmp.opSize; i++)
-                output[(*Elfrip)++] = CONDjmp.byteInter[i];
+        case 22:   
+            return IsECondJmpHandler (input, output, IsErip, Elfrip, 2, JA);
 
-            output [*Elfrip - 8] = 4;    
+        case 23:   
+            return IsECondJmpHandler (input, output, IsErip, Elfrip, 1, JAE);
 
-            (*Elfrip) += 4;     
-            return JE;
+        case 24:   
+            return IsECondJmpHandler (input, output, IsErip, Elfrip, 5, JB);
 
+        case 25:   
+            return IsECondJmpHandler (input, output, IsErip, Elfrip, 6, JBE);
+
+        case 26:   
+            return IsECondJmpHandler (input, output, IsErip, Elfrip, 4, JE);
+
+        case 27:   
+            return IsECondJmpHandler (input, output, IsErip, Elfrip, 0, JNE);
+
+        case 28:
+            output[(*Elfrip)++] = CALLb.byteInter[0];
+            JmpRelatedOpHandler (input, output, IsErip, Elfrip, address);
+            *IsErip += 4;
+            return CALL;
+
+        case 29:
+            output[(*Elfrip)++] = RETb.byteInter[0];
+            (*IsErip)++;
+            return RET;
             
         default:
             break;
@@ -281,13 +299,19 @@ BIN_TRANSLATOR_ERRORS SetLabels (char* output, command* commands, lable* lables,
         switch (commands[lables[i].commandN].commandType)
         {
             case JMP:
+            case CALL:
                 addrByte = 1;
                 jmpLen   = 4;
                 //SetUClabel (output, commands, lables, lables[i].commandN, lables[i].lableN);
                 printf ("label %d seted", i);
             break;
 
+            case JA:
+            case JAE:
+            case JB:
+            case JBE:
             case JE:
+            case JNE:
                 addrByte = CONDjmp.opSize;
                 jmpLen   = 4;
                 
@@ -381,4 +405,17 @@ void SetUClabel (char* output, command* commands, lable* lables, unsigned int co
     int* bytes = (int*)(output + commands[commandN].Elfaddress + 1);
     *bytes = - commands[commandN].Elfaddress + commands[lableN].Elfaddress - 5;
     printf ("delta %d\n",- commands[commandN].Elfaddress + commands[lableN].Elfaddress);
+}
+
+IsE_Commands          IsECondJmpHandler (char* input, char* output, int* IsErip, int* Elfrip, char mode, IsE_Commands command)
+{
+    (*IsErip)+= 5;
+
+    for (int i = 0; i < CONDjmp.opSize; i++)
+        output[(*Elfrip)++] = CONDjmp.byteInter[i];
+
+    output [*Elfrip - 8] = mode;    
+
+    (*Elfrip) += 4;     
+    return command;
 }
