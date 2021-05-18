@@ -6,13 +6,14 @@ unsigned int MAX_CODE_SIZE = 100000;
 BIN_TRANSLATOR_ERRORS CreateElf (const char* input, const char* output)
 {
     //--prepairngs for translation--//
+
     FILE* elfFile = fopen (output, "w");
     if (!elfFile)
         return BTR_NO_OUTPUT_FILE;
         
 
-    char*               inputBuffer     ;
-    unsigned int        fileSz          = 0 ;
+    char*               inputBuffer     = nullptr;
+    unsigned int        fileSz          = 0;
     char*               outputBuffer    = (char*) calloc (MAX_CODE_SIZE, sizeof (unsigned char));
      
     if (!outputBuffer)
@@ -24,16 +25,20 @@ BIN_TRANSLATOR_ERRORS CreateElf (const char* input, const char* output)
     readToStorage (input, &inputBuffer); 
 
     //--translations--//
-    IsE_to_x86_translation (inputBuffer, outputBuffer, &fileSz);
- 
-    //--output to elf file--//
+
     BinaryMin bin = {};
     bin.libSize = 0;
     bin.code = outputBuffer;
 
-    bin.secondHeader.P_FILES = bin.secondHeader.P_MEMSZ = 0x80 + fileSz;
-
     WriteLib   (&bin, "std_lib_nh");
+    IsE_to_x86_translation (inputBuffer, outputBuffer, &fileSz, bin.libSize);
+ 
+    //--output to elf file--//
+
+    bin.secondHeader.P_FILES += (elfHeadresSize + fileSz);
+    bin.secondHeader.P_MEMSZ += (elfHeadresSize + fileSz);
+
+    
     WriteToElf (elfFile, &bin); 
 
     //--free file threads and memory--/
@@ -43,30 +48,20 @@ BIN_TRANSLATOR_ERRORS CreateElf (const char* input, const char* output)
     return BTR_NO_ERRORS;
 }
 
-BIN_TRANSLATOR_ERRORS IsE_to_x86_translation (char* input_buffer, char* output_buffer, unsigned int* fileSize)
+BIN_TRANSLATOR_ERRORS IsE_to_x86_translation (char* input_buffer, char* output_buffer, unsigned int* fileSize, unsigned int libSize)
 {
-    if(strncmp ("KRYM", input_buffer,4))
+    IsE_Header* header = (IsE_Header*)input_buffer;
+    if (checkTranslatable (header))
         return BTR_WRONG_ECE_FORM;
-    
-    input_buffer += 4;
 
-    printf ("norm");  
-
-    input_buffer += 4;
-
-    int commandN = *(int*)input_buffer;
-
-    input_buffer += 4;
-
-    FILE* lib = fopen ("std_lib_nh", "r");
-    unsigned int libSize = getFileSize (lib);
-
+    int commandN = header->nMembers;
+    input_buffer += sizeof (IsE_Header);
 
     int IsErip = 0;
     int Elfrip = 0;
+
     command* commands = (command*) calloc (sizeof (command), MAX_CODE_SIZE);
     lable* lables = (lable*) calloc (sizeof (lable), MAX_CODE_SIZE);
-
     if (!commands)
         return BTR_NO_FREE_MEMORY;
 
@@ -75,40 +70,17 @@ BIN_TRANSLATOR_ERRORS IsE_to_x86_translation (char* input_buffer, char* output_b
         free (commands);
         return BTR_NO_FREE_MEMORY;
     }
+
     FindIsECommands (input_buffer, output_buffer,commands, &commandN, libSize, &IsErip, &Elfrip);
     *fileSize = Elfrip;
 
-    unsigned int lableN = 0;
-
-    printf ("commandN %d", commandN);
-      
+    unsigned int lableN = 0;   
     FindlableAdresses (input_buffer, commands, lables, commandN, &lableN);
-    printf ("labeln %d\n", lableN);
+    PUSHPOPOPTIMIZATION (output_buffer, commands, fileSize, commandN);
 
+    for (int i = 0; i < commandN; i ++)
+        printf ("%d: %x\n", i, commands[i].Elfaddress);
     SetLabels (output_buffer, commands, lables, commandN, lableN);
-
-
-    //set  lables
-    //translate
-    
-    
-    
-/*
-    unsigned int rip = 0;
-   
-    *fileSize = 10;
-    *output_buffer = 0xB8;
-    *(output_buffer+1) = 0x3C;
-    *(output_buffer+2) = 0x00;
-    *(output_buffer+3) = 0x00;
-    *(output_buffer+4) = 0x00;
-    *(output_buffer+5) = 0x48;
-    *(output_buffer+6) = 0x31;
-    *(output_buffer+7) = 0xff;
-    *(output_buffer+8) = 0x0f;
-    *(output_buffer+9) = 0x05;
-    
-*/   
 
     free (commands);
     free (lables);
@@ -119,10 +91,11 @@ BIN_TRANSLATOR_ERRORS IsE_to_x86_translation (char* input_buffer, char* output_b
 
 BIN_TRANSLATOR_ERRORS WriteToElf (FILE* output, BinaryMin* codeStructure)
 {
+    printf ("%d %d %d", codeStructure->libSize, codeStructure->secondHeader.P_FILES, codeStructure->secondHeader.P_FILES - elfHeadresSize - codeStructure->libSize);
     fwrite (&(codeStructure->firstHeader) , sizeof (Elf_Header_x86_min), 1                                  , output);
     fwrite (&(codeStructure->secondHeader), sizeof (Program_Header)    , 1                                  , output);
     fwrite (  codeStructure->IsE_STD      , sizeof (char)              , codeStructure->libSize             , output);
-    fwrite (  codeStructure->code         , sizeof (char)              , codeStructure->secondHeader.P_FILES - 0x80 - codeStructure->libSize , output);
+    fwrite (  codeStructure->code         , sizeof (char)              , codeStructure->secondHeader.P_FILES - elfHeadresSize - codeStructure->libSize , output);
     fflush(stdout); 
     return BTR_NO_ERRORS;
 }
@@ -139,12 +112,11 @@ BIN_TRANSLATOR_ERRORS WriteLib  (BinaryMin* structure, const char* filename)
     }
 
     unsigned int fsize = getFileSize (lib);
-    structure->secondHeader.P_FILES += fsize; 
-    structure->secondHeader.P_MEMSZ += fsize; 
+    structure->secondHeader.P_FILES = fsize; 
+    structure->secondHeader.P_MEMSZ = fsize; 
     structure->libSize = fsize;
     fclose (lib);
 
-printf ("%s", structure->IsE_STD);
     return BTR_NO_ERRORS;
 
 }
@@ -159,8 +131,6 @@ BIN_TRANSLATOR_ERRORS FindIsECommands (char* input, char* output, command* comma
         commands[i].commandType = IsEOpHandler (input, output, IsErip, Elfrip, libSize);
     }
 
-    printf ("i index is %d\n", i);
-
     *commandN = i;
     
     return BTR_NO_ERRORS;
@@ -169,90 +139,68 @@ BIN_TRANSLATOR_ERRORS FindIsECommands (char* input, char* output, command* comma
 
 IsE_Commands IsEOpHandler (char* input, char* output, int* IsErip, int* Elfrip, int libSize)
 {
-    int address = 0;
     switch (input[*IsErip])
     {
-        case 0x00:
+        case IsE_HLT:
             output[(*Elfrip)++] = HLTb.byteInter[0];
-            address = 1 - libSize - *Elfrip;
-            JmpRelatedOpHandler (input, output, IsErip, Elfrip, address);
+            JmpRelatedOpHandler (input, output, IsErip, Elfrip, HLToffset - libSize - *Elfrip);
             return HLT;
-        case 3:
+        case IsE_IN:
             output[(*Elfrip)++] = INb.byteInter[0];
-            address = 3 - libSize - *Elfrip;
-            JmpRelatedOpHandler (input, output, IsErip, Elfrip, address);
+            JmpRelatedOpHandler (input, output, IsErip, Elfrip, INoffset - libSize - *Elfrip);
             return IN;
-        case 0x13:
+        case IsE_OUT:
             output[(*Elfrip)++] = OUTb.byteInter[0];
-            address = 5 - libSize - *Elfrip;
-            JmpRelatedOpHandler (input, output, IsErip, Elfrip, address);
+            JmpRelatedOpHandler (input, output, IsErip, Elfrip, OUToffset - libSize - *Elfrip);
             return OUT;
 
-        case 21:
-            printf ("jmp is here\n");
+        case IsE_JMP:
             output[(*Elfrip)++] = JMPb.byteInter[0];
-            JmpRelatedOpHandler (input, output, IsErip, Elfrip, address);
-            *IsErip += 4;
+            JmpRelatedOpHandler (input, output, IsErip, Elfrip, 0); // as addres where to jump will be calculared later
+            *IsErip += addressLength;                                               
             return JMP;
 
-        case 1:
-            for (int i = 0; i < ADDb.opSize; i++)
-                  output[(*Elfrip)++] = ADDb.byteInter[i];
-
-            (*IsErip) ++;      
-            return ADD;  
-        case 17:
-            for (int i = 0; i < SUBb.opSize; i++)
-                  output[(*Elfrip)++] = SUBb.byteInter[i];
-
-            (*IsErip) ++;      
-            return SUB;  
-        case 2:
-            for (int i = 0; i < MULb.opSize; i++)
-                  output[(*Elfrip)++] = MULb.byteInter[i];
-
-            (*IsErip) ++;      
-            return MUL;  
-        case 18:
-            for (int i = 0; i < DIVb.opSize; i++)
-                  output[(*Elfrip)++] = DIVb.byteInter[i];
-
-            (*IsErip) ++;      
-            return DIV;  
-
-        case 4:
+        case IsE_ADD:
+            return IsEMathHandler (input, output, IsErip, Elfrip, ADD);  
+        case IsE_DIV:
+            return IsEMathHandler (input, output, IsErip, Elfrip, DIV);  
+        case IsE_MUL:
+            return IsEMathHandler (input, output, IsErip, Elfrip, MUL);  
+        case IsE_SUB:
+            return IsEMathHandler (input, output, IsErip, Elfrip, SUB);  
+        case IsE_PUSH:
             (*IsErip)++;
             return IsEPushHandler (input, output, IsErip, Elfrip);
 
-        case 20:
+        case IsE_POP:
             (*IsErip)++;
             return IsEPopHandler  (input, output, IsErip, Elfrip);
 
-        case 22:   
+        case IsE_JA:   
             return IsECondJmpHandler (input, output, IsErip, Elfrip, 2, JA);
 
-        case 23:   
+        case IsE_JAE:   
             return IsECondJmpHandler (input, output, IsErip, Elfrip, 1, JAE);
 
-        case 24:   
+        case IsE_JB:   
             return IsECondJmpHandler (input, output, IsErip, Elfrip, 5, JB);
 
-        case 25:   
+        case IsE_JBE:   
             return IsECondJmpHandler (input, output, IsErip, Elfrip, 6, JBE);
 
-        case 26:   
+        case IsE_JE:   
             return IsECondJmpHandler (input, output, IsErip, Elfrip, 4, JE);
 
-        case 27:   
+        case IsE_JNE:   
             return IsECondJmpHandler (input, output, IsErip, Elfrip, 0, JNE);
 
-        case 28:
+        case IsE_CALL:
             output[(*Elfrip)++] = CALLb.byteInter[0];
-            JmpRelatedOpHandler (input, output, IsErip, Elfrip, address);
-            *IsErip += 4;
+            JmpRelatedOpHandler (input, output, IsErip, Elfrip, 0);
+            *IsErip += addressLength;
             return CALL;
 
-        case 29:
+        case IsE_RET:
             output[(*Elfrip)++] = RETb.byteInter[0];
             (*IsErip)++;
             return RET;
@@ -263,12 +211,41 @@ IsE_Commands IsEOpHandler (char* input, char* output, int* IsErip, int* Elfrip, 
     return HLT;
 }
 
+IsE_Commands IsEMathHandler (char* input, char* output, int* IsErip, int* Elfrip, IsE_Commands commandId)
+{
+    for (int i = 0; i < Mathb.opSize; i++)
+        output[(*Elfrip)++] = Mathb.byteInter[i];
+
+    switch (commandId)
+    {
+    case ADD:
+        output[(*Elfrip) - Mathb.opSize + MathModeByteOffset] = ADDop;
+    break;
+
+    case SUB:
+        output[(*Elfrip) - Mathb.opSize + MathModeByteOffset] = SUBop;
+    break;
+
+    case MUL:
+        output[(*Elfrip) - Mathb.opSize + MathModeByteOffset] = MULop;
+    break;
+
+    case DIV:
+        output[(*Elfrip) - Mathb.opSize + MathModeByteOffset] = DIVop;
+    break;
+    default:
+        break;
+    }
+    
+
+    (*IsErip) ++;      
+    return commandId;  
+}
+
 BIN_TRANSLATOR_ERRORS FindlableAdresses (char* input, command* commands, lable* lables, int commandN, unsigned int* lableN)
 {
-    printf ("command num in label %d\n", commandN);
     for (int i = 0; i < commandN; i++)
     {
-        printf ("mmm %d\n", commands[i].commandType);
         fflush (stdout);
         if (commands[i].commandType <= JNE && commands[i].commandType >= CALL)
         {
@@ -277,8 +254,7 @@ BIN_TRANSLATOR_ERRORS FindlableAdresses (char* input, command* commands, lable* 
             for (int j = 0; j < commandN; j ++)
                 if (commands[j].IsEaddress == *addr)
                 {
-                    printf ("found");
-                    lables[*lableN].commandN  = i;
+                    lables[*lableN].commandN    = i;
                     lables[(*lableN)++].lableN  = j;
                     break;
                 }
@@ -288,22 +264,24 @@ BIN_TRANSLATOR_ERRORS FindlableAdresses (char* input, command* commands, lable* 
     return BTR_NO_ERRORS;
 }
 
+void SetAddress (char* output, command* commands, lable* lables, int i, int addrByte, int jmpLen)
+{
+    int* bytes = (int*)(output + commands[lables[i].commandN].Elfaddress + addrByte);
+    *bytes = - addrByte - jmpLen - commands[lables[i].commandN].Elfaddress + commands[lables[i].lableN].Elfaddress;   
+}
+
 BIN_TRANSLATOR_ERRORS SetLabels (char* output, command* commands, lable* lables, int commandN, unsigned int lableN)
 {
     int addrByte = 0;
     int jmpLen   = 0;
     for (int i = 0; i < lableN ; i ++)
     {
-        printf ("first commad type %d\n", commands[lables[i].commandN].commandType);
         
         switch (commands[lables[i].commandN].commandType)
         {
             case JMP:
             case CALL:
-                addrByte = 1;
-                jmpLen   = 4;
-                //SetUClabel (output, commands, lables, lables[i].commandN, lables[i].lableN);
-                printf ("label %d seted", i);
+                SetAddress (output, commands, lables, i, JMPb.opSize, JMPb.argSize);
             break;
 
             case JA:
@@ -312,25 +290,22 @@ BIN_TRANSLATOR_ERRORS SetLabels (char* output, command* commands, lable* lables,
             case JBE:
             case JE:
             case JNE:
-                addrByte = CONDjmp.opSize;
-                jmpLen   = 4;
-                
+                SetAddress (output, commands, lables, i, CONDjmp.opSize, CONDjmp.argSize);
             break;
         }
-        int* bytes = (int*)(output + commands[lables[i].commandN].Elfaddress + addrByte);
-        *bytes = - addrByte - jmpLen - commands[lables[i].commandN].Elfaddress + commands[lables[i].lableN].Elfaddress;
-        printf ("deltaaddr %d", - addrByte - jmpLen - commands[lables[i].commandN].Elfaddress + commands[lables[i].lableN].Elfaddress);
+
     }
     return BTR_NO_ERRORS;
 }
 
 void   JmpRelatedOpHandler (char* input, char* output, int* IsErip, int* Elfrip, int address)
 {
-    (*IsErip) += 1;
+    (*IsErip) ++;
+
     int* addr = (int*)(output + *Elfrip);
     *addr = address;
-    (*Elfrip) += 4;
-    printf ("elf: %d\n", *Elfrip);  
+
+    (*Elfrip) += addressLength;  
 }
 
 IsE_Commands IsEPushHandler (char* input, char* output, int* IsErip, int* Elfrip)
@@ -338,7 +313,7 @@ IsE_Commands IsEPushHandler (char* input, char* output, int* IsErip, int* Elfrip
     char delta = 0;
     switch (input[(*IsErip)++])
     {
-    case 1:
+    case 1:             // push number 
         for (int i = 0 ; i < 2; i++)
             output[(*Elfrip)++] = PUSHnb.byteInter[i]; 
 
@@ -350,17 +325,12 @@ IsE_Commands IsEPushHandler (char* input, char* output, int* IsErip, int* Elfrip
 
         return PUSHn;
 
-    case 2:
+    case 2:             // push register
         delta = input[(*IsErip)++];
-        printf ("push r reg %d\n", delta);
         for (int i = 0; i < PUSHrb.opSize; i++)
-        {
             output[(*Elfrip)++] = PUSHrb. byteInter[i];
-            printf ("%x", PUSHrb. byteInter[i]);
-        }
             
-
-        output [(*Elfrip) - 2] += (delta * 8);
+        output [(*Elfrip) - PushRegOffset] += (delta * regNDelta);
 
         return PUSHr;
     
@@ -376,19 +346,18 @@ IsE_Commands          IsEPopHandler  (char* input, char* output, int* IsErip, in
     char delta = 0;
     switch (input[(*IsErip)++])
     {
-    case 0:
+    case 0:         // pop nowhere
         for (int i = 0; i < POPb.argSize; i++)
             output[(*Elfrip)++] = POPb.byteInter[i];
 
         return POP;
 
-    case 2:
+    case 2:         // pop to register
         delta = input[(*IsErip)++];
         for (int i = 0; i < POPrb.opSize; i++)
             output[(*Elfrip)++] = POPrb. byteInter[i];
 
-        output [(*Elfrip) - 6] += delta * 8;
-        printf ("delta %d\n", delta);
+        output [(*Elfrip) - PopRegOffset] += delta * regNDelta;
         return POPr;
     
     
@@ -400,22 +369,112 @@ IsE_Commands          IsEPopHandler  (char* input, char* output, int* IsErip, in
 
 void SetUClabel (char* output, command* commands, lable* lables, unsigned int commandN, unsigned int lableN)
 {
-    printf ("here is fine\n");
-    fflush (stdout);
     int* bytes = (int*)(output + commands[commandN].Elfaddress + 1);
-    *bytes = - commands[commandN].Elfaddress + commands[lableN].Elfaddress - 5;
-    printf ("delta %d\n",- commands[commandN].Elfaddress + commands[lableN].Elfaddress);
+    *bytes = - commands[commandN].Elfaddress + commands[lableN].Elfaddress - addressLength - 1;
+}
+
+BIN_TRANSLATOR_ERRORS PUSHPOPOPTIMIZATION (char* output, command* commands, unsigned int* bufferSize, unsigned int commandN)
+{
+    printf ("bufferSize %d\n", *bufferSize);
+
+    char* end = output + *bufferSize;
+    for (int i = 0; i < *bufferSize; i++)
+    {
+        unsigned int currentCommandN = 0;
+        if (!FindPUSHPOPsequence (&PUSHPOPs, output + i))
+        {
+            if (output[i + firstRegByteOffset] == output[i + firstRegByteOffset + secondRegByteOffset + 1])
+                printf ("you will be optimised by first %d\n", i);
+
+            if (output[i + firstRegByteOffset + secondRegByteOffset + 1] == 4)
+            {
+                printf ("you will be optimised by second %d\n", i);
+                for (; currentCommandN < commandN; currentCommandN++)
+                {
+                    if (commands[currentCommandN].Elfaddress >= i)
+                        break;
+                }
+                commands[currentCommandN++].Elfaddress -= (PUSHPOPs.nBytes/2);
+                for (; currentCommandN < commandN; currentCommandN++)
+                {
+                    if (commands[currentCommandN].commandType == HLT ||
+                        commands[currentCommandN].commandType == IN  ||
+                        commands[currentCommandN].commandType == OUT )
+                    {
+                        int* temp = (int*)(output + commands[currentCommandN].Elfaddress + 1);
+                        *temp += (PUSHPOPs.nBytes - movOpt.nBytes);
+                    }
+                    commands[currentCommandN].Elfaddress -= (PUSHPOPs.nBytes - movOpt.nBytes);
+                }
+                char* write = output + i;
+                for (int j = 0; j < movOpt.nBytes - 1; j++)
+                    *(write++) = (char)movOpt.bytes[j];
+                switch (output[i + firstRegByteOffset])
+                {
+                case XMM2:
+                    *(write++) = (char)0xc3;
+                    break;
+                case XMM3:
+                    *(write++) = (char)0xc4;
+                    break;
+                case XMM4:
+                printf ("tuta");
+                    *(write++) = (char)0xc5;
+                    break;
+                case XMM5:
+                    *(write++) = (char)0xc6;
+                    break;
+                default:
+                    break;
+                }
+                printf ("\n\n%x\n\n", output[i + firstRegByteOffset]);
+                char* read  = output + i + 18;
+                while (read - end != 1)
+                    *(write++) = *(read++);
+
+                *bufferSize -= 14;
+                
+
+
+            }
+                
+        }
+    }  
+    printf ("optimisation ended\n");
+    return BTR_NO_ERRORS;
+}
+
+int  FindPUSHPOPsequence (const byteSequence* first, char* buffer)
+{
+    if (strncmp((char*)first->bytes, buffer, firstRegByteOffset))
+        return 1;
+
+    if (strncmp((char*)(first->bytes + firstRegByteOffset + 1), buffer + firstRegByteOffset + 1, secondRegByteOffset))
+        return 1;
+
+    if (strncmp((char*)(first->bytes + firstRegByteOffset + secondRegByteOffset + 2), buffer + firstRegByteOffset + secondRegByteOffset + 2, thirdRegByteOffset))
+        return 1;
+
+    return 0;
 }
 
 IsE_Commands          IsECondJmpHandler (char* input, char* output, int* IsErip, int* Elfrip, char mode, IsE_Commands command)
 {
-    (*IsErip)+= 5;
+    (*IsErip)+= addressLength + 1;
 
     for (int i = 0; i < CONDjmp.opSize; i++)
         output[(*Elfrip)++] = CONDjmp.byteInter[i];
 
-    output [*Elfrip - 8] = mode;    
+    output [*Elfrip - CondAddressOffset] = mode;    
 
-    (*Elfrip) += 4;     
+    (*Elfrip) += addressLength;     
     return command;
+}
+
+int  checkTranslatable (IsE_Header* header)
+{
+    if( header->signature == signature && header->version == 1)
+        return BTR_NO_ERRORS;
+
+    return BTR_WRONG_ECE_FORM;
 }
